@@ -49,7 +49,9 @@ wallet {options.Wallet}
             var version = await nanoClient.VersionAsync();
             logger.LogInformation($"Node vendor: {version.NodeVendor}");
 
-            var multiplier = (decimal)(await nanoClient.MraiToRawAsync(new BigInteger(1)));
+            var multiplier = version.NodeVendor.StartsWith("Banano")
+                ? (decimal)(await nanoClient.BanToRawAsync(new BigInteger(1)))
+                : (decimal)(await nanoClient.MraiToRawAsync(new BigInteger(1)));
 
             logger.LogInformation($"1 coin == {multiplier} raw");
 
