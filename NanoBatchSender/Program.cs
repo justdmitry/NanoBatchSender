@@ -50,8 +50,8 @@ wallet {options.Wallet}
             logger.LogInformation($"Node vendor: {version.NodeVendor}");
 
             var multiplier = version.NodeVendor.StartsWith("Banano")
-                ? (decimal)(await nanoClient.BanToRawAsync(new BigInteger(1)))
-                : (decimal)(await nanoClient.MraiToRawAsync(new BigInteger(1)));
+                ? await nanoClient.BanToRawAsync(new BigInteger(1))
+                : await nanoClient.MraiToRawAsync(new BigInteger(1));
 
             logger.LogInformation($"1 coin == {multiplier} raw");
 
@@ -99,9 +99,10 @@ wallet {options.Wallet}
                         var amount = decimal.Parse(parts[1], CultureInfo.InvariantCulture);
                         var id = parts[2].ToUpperInvariant();
 
-                        var amountRaw = amount * multiplier;
+                        // only 3 decimal digits are supported (don't ask why, I just want it)
+                        var amountRaw = multiplier * (BigInteger)Math.Truncate(amount * 1000) / 1000;
 
-                        var req = new SendRequest(options.Wallet, options.Source, account, (BigInteger)amountRaw, id);
+                        var req = new SendRequest(options.Wallet, options.Source, account, amountRaw, id);
                         var resp = await nanoClient.SendAsync(req);
                         var block = resp.Block;
 
