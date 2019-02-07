@@ -1,0 +1,10 @@
+﻿# Format:
+#   Space, Tab, Comma (,) or Semicolon (;) delimited fields:
+#     ban_ or nano_ or xrb_ address
+#     amount (in nano/banano, not raw), no grouping, decimal paced by dot: 12345.67
+#     id (for RPC Send command)
+#
+# Lines starting with # are ignored
+#
+# Sample:
+# ban_3pa1m3g79i1h7uijugndjeytpmqbsg6hc19zm8m7foqygwos1mmcqmab91hh 1 FooBar
