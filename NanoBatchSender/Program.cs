@@ -102,6 +102,16 @@ wallet {options.Wallet}
                         // only 3 decimal digits are supported (don't ask why, I just want it)
                         var amountRaw = multiplier * (BigInteger)Math.Truncate(amount * 1000) / 1000;
 
+                        var valid = await nanoClient.ValidateAccountNumberAsync(account);
+                        if (valid != 1)
+                        {
+                            msg = $"Invalid account: {account}, skipped";
+                            await outputFile.WriteLineAsync(msg);
+                            logger.LogWarning(msg);
+                            invalidLineCount++;
+                            continue;
+                        }
+
                         var req = new SendRequest(options.Wallet, options.Source, account, amountRaw, id);
                         var resp = await nanoClient.SendAsync(req);
                         var block = resp.Block;
