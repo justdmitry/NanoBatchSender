@@ -1,11 +1,11 @@
 # NANO Batch Sender 
 
-Command-line tool for mass sending coins in Nano and Banano networks.
+Command-line tool for mass sending coins in Nano-based networks.
 
 ## Features
 
 * Auto-detecting of nano/banano nodes, auto rai/ban conversion to raw
-* Uses `id` of RPC `Send` command, no more double-sends, guaranteed by Node itself
+* Uses `id` of RPC `Send` command, no more double-sends, guaranteed by Node itself (see [Send command](https://github.com/nanocurrency/nano-node/wiki/RPC-protocol#send) description)
 * Cross-platform (install [.NET Core SDK](https://dotnet.microsoft.com/download) for your OS)
 * Block hashes are written to output file
 
@@ -30,13 +30,12 @@ Command-line tool for mass sending coins in Nano and Banano networks.
 # Format:
 #   Space, Tab, Comma (,) or Semicolon (;) delimited fields:
 #     1) ban_ or nano_ or xrb_ address
-#     2) amount (in nano/banano, not raw), no grouping, decimal paced by dot: 12345.67
+#     2) amount (in nano/banano, not raw), no grouping, decimal places with dot: 12345.67
 #     3) id (for RPC Send command)
 #
 # Lines starting with # and empty lines are ignored
 #
-# Sample line:
-
+# Sample lines:
 ban_3pa1m3g79i1h7uijugndjeytpmqbsg6hc19zm8m7foqygwos1mmcqmab91hh 1 FooBar
 ban_3pa1m3g79i1h7uijugndjeytpmqbsg6hc19zm8m7foqygwos1mmcqmab91hh 2 FooBar2
 ```
@@ -66,4 +65,4 @@ Total: 18 lines = 11 skipped + 0 invalid + 7 payments
   Elapsed: 00:00:17.4053891
 ```
 
-**Attention!** There is no info about "new block created" or "id already used before, skipped" in node answer (V17.1). If you provide non-unique `id` in input file - node will return hash of old/previous block, and there is no any sign of this in node response and in output file.
+**Attention!** There is no info about "new block created" or "id already used before, skipped" in node answer (V17.1). If you provide non-unique `id` in input file - node will return hash of old/previous block, no payment will be made, and there is no any sign of this in node response and in output file.
