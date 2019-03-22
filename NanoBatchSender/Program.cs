@@ -1,10 +1,7 @@
 ﻿namespace NanoBatchSender
 {
     using System;
-    using System.Diagnostics;
     using System.Globalization;
-    using System.IO;
-    using System.Net.Http;
     using System.Numerics;
     using System.Threading.Tasks;
     using Microsoft.Extensions.Configuration;
@@ -40,9 +37,9 @@
             }
 
             var send = "send".Equals(args[0], StringComparison.OrdinalIgnoreCase);
-            var check = "check".Equals(args[0], StringComparison.OrdinalIgnoreCase);
+            var balance = "balance".Equals(args[0], StringComparison.OrdinalIgnoreCase);
 
-            if (send == check)
+            if (send == balance)
             {
                 ShowHelp();
                 return;
@@ -68,14 +65,15 @@
             var p = services.GetRequiredService<Program>();
             if (send)
             {
-                await p.SendAsync(args[1]);
+                await p.SendAsync(args[1], "send_done.txt");
             }
 
-            if (check)
+            if (balance)
             {
-                await p.CheckAsync(args[1]);
+                await p.BalanceAsync(args[1], "balance_done.txt");
             }
 
+            // Wait for async logging
             await Task.Delay(500);
         }
 
@@ -83,13 +81,15 @@
         {
             Console.WriteLine("Invalid arguments");
             Console.WriteLine("Usage:");
-            Console.WriteLine("    dotnet run {send|check} <inputfile>");
+            Console.WriteLine("    dotnet run {send|balance} <inputfile>");
             Console.WriteLine();
-            Console.WriteLine("'Send' file format (lines starting # are ignored):");
+            Console.WriteLine("'send' file format (lines starting # are ignored):");
             Console.WriteLine("    <ban_address> <BAN amount> <node_unique_id>");
             Console.WriteLine();
-            Console.WriteLine("'Check' file format (lines starting # are ignored):");
+            Console.WriteLine("'balance' file format (lines starting # are ignored):");
             Console.WriteLine("    <ban_address> <any content (ignored)>");
+            Console.WriteLine();
+            Console.WriteLine("Fields in <inputfile> may be separated by space or tab or comma or semicolon");
             Console.WriteLine();
         }
 
@@ -103,7 +103,7 @@
                 : await nanoRpcClient.MraiToRawAsync(new BigInteger(1));
         }
 
-        public async Task SendAsync(string fileName)
+        public async Task SendAsync(string inputFileName, string outputFileName)
         {
             logger.LogInformation($@"Preparing to send:
 wallet {options.Wallet}
@@ -114,143 +114,100 @@ wallet {options.Wallet}
 
             logger.LogInformation($"1 coin == {multiplier} raw");
 
-            var totalLineCount = 0;
-            var skippedLineCount = 0;
-            var invalidLineCount = 0;
+            var invalidCount = 0;
             var paymentsCount = 0;
-            var stopwatch = new Stopwatch();
-            stopwatch.Start();
-            string msg;
 
-            using (var inputFile = new StreamReader(fileName))
+            using (var outputFile = new OutputFile(outputFileName))
             {
-                using (var outputFile = new StreamWriter("payments_done.txt", true))
+                await outputFile.WriteHeaderAsync("Payments");
+
+                using (var inputFile = new InputFile(inputFileName))
                 {
-                    outputFile.AutoFlush = true;
-
-                    await outputFile.WriteLineAsync();
-                    await outputFile.WriteLineAsync();
-                    await outputFile.WriteLineAsync($"Payments, started at {DateTimeOffset.Now}");
-
-                    while (!inputFile.EndOfStream)
+                    while (true)
                     {
-                        var s = await inputFile.ReadLineAsync();
-                        s = s.Trim();
-                        totalLineCount++;
+                        var data = await inputFile.ReadNextAsync();
 
-                        if (string.IsNullOrWhiteSpace(s) || s.StartsWith('#'))
+                        if (data == null)
                         {
-                            skippedLineCount++;
+                            break;
+                        }
+
+                        if (data.Length != 3)
+                        {
+                            await outputFile.WriteLinesAsync($"Invalid line {inputFile.TotalLines}: wrong parts count ({data.Length}), skipped");
+                            invalidCount++;
                             continue;
                         }
 
-                        var parts = s.Split(new[] { ' ', '\t', ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
-                        if (parts.Length != 3)
+                        var account = new Account(data[0]);
+
+                        if (await nanoRpcClient.ValidateAccountNumberAsync(account) != 1)
                         {
-                            msg = $"Invalid line {totalLineCount}: wrong parts count ({parts.Length}), skipped";
-                            await outputFile.WriteLineAsync(msg);
-                            logger.LogWarning(msg);
-                            invalidLineCount++;
+                            await outputFile.WriteLinesAsync($"{account} Invalid account (skipped)");
+                            invalidCount++;
                             continue;
                         }
 
-                        var account = new Account(parts[0]);
-                        var amount = decimal.Parse(parts[1], CultureInfo.InvariantCulture);
-                        var id = parts[2].ToUpperInvariant();
+                        var amount = decimal.Parse(data[1], CultureInfo.InvariantCulture);
+                        var id = data[2].ToUpperInvariant();
 
                         // only 3 decimal digits are supported (don't ask why, I just want it)
                         var amountRaw = multiplier * (BigInteger)Math.Truncate(amount * Fractions) / Fractions;
-
-                        var valid = await nanoRpcClient.ValidateAccountNumberAsync(account);
-                        if (valid != 1)
-                        {
-                            msg = $"Invalid account: {account}, skipped";
-                            await outputFile.WriteLineAsync(msg);
-                            logger.LogWarning(msg);
-                            invalidLineCount++;
-                            continue;
-                        }
 
                         var req = new SendRequest(options.Wallet, options.Source, account, amountRaw, id);
                         var resp = await nanoRpcClient.SendAsync(req);
                         var block = resp.Block;
 
-                        msg = $"{DateTimeOffset.Now.ToString("HH:mm:ss")} {block} {account} {amount}";
-                        await outputFile.WriteLineAsync(msg);
-                        logger.LogInformation(msg);
-
+                        await outputFile.WriteLinesAsync($"{DateTimeOffset.Now.ToString("HH:mm:ss")} {block} {account} {amount}");
                         paymentsCount++;
                     }
 
                     await outputFile.WriteLineAsync();
 
-                    msg = $"Total: {totalLineCount} lines = {skippedLineCount} skipped + {invalidLineCount} invalid + {paymentsCount} payments";
-                    await outputFile.WriteLineAsync(msg);
-                    logger.LogInformation(msg);
+                    var msg = $"Total: {inputFile.TotalLines} lines = {inputFile.SkippedLines} skipped + {invalidCount} invalid + {paymentsCount} payments";
+                    await outputFile.WriteLinesAsync(msg);
 
-                    msg = $"Elapsed: {stopwatch.Elapsed}";
-                    await outputFile.WriteLineAsync(msg);
-                    logger.LogInformation(msg);
-
-                    await outputFile.WriteLineAsync();
+                    await outputFile.WriteFooterAsync();
                 }
             }
 
             logger.LogInformation("Done");
         }
 
-        public async Task CheckAsync(string fileName)
+        public async Task BalanceAsync(string inputFileName, string outputFileName)
         {
-            logger.LogInformation($@"Preparing to check:
+            logger.LogInformation($@"Preparing to check balances:
    via {options.NodeEndpoint}");
 
             var multiplier = await GetMultiplier();
 
             logger.LogInformation($"1 coin == {multiplier} raw");
 
-            var totalLineCount = 0;
-            var skippedLineCount = 0;
-            var invalidLineCount = 0;
+            var invalidCount = 0;
             var openCount = 0;
             var notOpenCount = 0;
-            var stopwatch = new Stopwatch();
-            stopwatch.Start();
-            string msg;
 
-            using (var inputFile = new StreamReader(fileName))
+            using (var outputFile = new OutputFile(outputFileName))
             {
-                using (var outputFile = new StreamWriter("check_done.txt", true))
+                await outputFile.WriteHeaderAsync("Accounts balance check");
+
+                using (var inputFile = new InputFile(inputFileName))
                 {
-                    outputFile.AutoFlush = true;
-
-                    await outputFile.WriteLineAsync();
-                    await outputFile.WriteLineAsync();
-                    await outputFile.WriteLineAsync($"Accounts balance check, started at {DateTimeOffset.Now}");
-                    await outputFile.WriteLineAsync();
-
-                    while (!inputFile.EndOfStream)
+                    while (true)
                     {
-                        var s = await inputFile.ReadLineAsync();
-                        s = s.Trim();
-                        totalLineCount++;
+                        var data = await inputFile.ReadNextAsync();
 
-                        if (string.IsNullOrWhiteSpace(s) || s.StartsWith('#'))
+                        if (data == null)
                         {
-                            skippedLineCount++;
-                            continue;
+                            break;
                         }
 
-                        var parts = s.Split(new[] { ' ', '\t', ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+                        var account = new Account(data[0]);
 
-                        var account = new Account(parts[0]);
-
-                        var valid = await nanoRpcClient.ValidateAccountNumberAsync(account);
-                        if (valid != 1)
+                        if (await nanoRpcClient.ValidateAccountNumberAsync(account) != 1)
                         {
-                            msg = $"{account} Invalid account (skipped)";
-                            await outputFile.WriteLineAsync(msg);
-                            logger.LogWarning(msg);
-                            invalidLineCount++;
+                            await outputFile.WriteLinesAsync($"{account} Invalid account (skipped)");
+                            invalidCount++;
                             continue;
                         }
 
@@ -261,36 +218,27 @@ wallet {options.Wallet}
 
                             var balanceRaw = await nanoRpcClient.AccountBalanceAsync(account);
                             var balance = ((decimal)(balanceRaw.Balance / multiplier * Fractions)) / Fractions;
-                            msg = $"{account} {balance} BAN";
-                            await outputFile.WriteLineAsync(msg);
-                            logger.LogInformation(msg);
+                            await outputFile.WriteLinesAsync($"{account} {balance} BAN");
                             openCount++;
                         }
                         catch (ErrorResponseException ex) when (ex.Message == "Account not found")
                         {
-                            msg = $"{account} Not found (not open)";
-                            await outputFile.WriteLineAsync(msg);
-                            logger.LogWarning(msg);
+                            await outputFile.WriteLinesAsync($"{account} Not found (not open)");
                             notOpenCount++;
                         }
                     }
 
                     await outputFile.WriteLineAsync();
 
-                    msg = $"Total: {totalLineCount} lines = {skippedLineCount} skipped + {invalidLineCount} invalid + {openCount} open + {notOpenCount} not open";
-                    await outputFile.WriteLineAsync(msg);
-                    logger.LogInformation(msg);
-
-                    msg = $"Elapsed: {stopwatch.Elapsed}";
-                    await outputFile.WriteLineAsync(msg);
-                    logger.LogInformation(msg);
-
-                    await outputFile.WriteLineAsync("By NanoBatchSender: https://github.com/justdmitry/NanoBatchSender");
-                    await outputFile.WriteLineAsync();
+                    var msg = $"Total: {inputFile.TotalLines} lines = {inputFile.SkippedLines} skipped + {invalidCount} invalid + {openCount} open + {notOpenCount} not open";
+                    await outputFile.WriteLinesAsync(msg);
                 }
+
+                await outputFile.WriteFooterAsync();
             }
 
-            logger.LogInformation("Done");
+            logger.LogInformation("Done.");
         }
     }
 }
+
