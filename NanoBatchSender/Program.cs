@@ -19,9 +19,9 @@
 
         private readonly SenderOptions options;
 
-        private readonly NanoRpcClient nanoRpcClient;
+        private readonly INanoRpcClient nanoRpcClient;
 
-        public Program(IOptions<SenderOptions> options, NanoRpcClient nanoRpcClient, ILogger<Program> logger)
+        public Program(IOptions<SenderOptions> options, INanoRpcClient nanoRpcClient, ILogger<Program> logger)
         {
             this.options = options.Value;
             this.nanoRpcClient = nanoRpcClient;
@@ -53,12 +53,7 @@
             var services = new ServiceCollection()
                 .AddLogging(o => o.AddConfiguration(config.GetSection("Logging")).AddConsole())
                 .Configure<SenderOptions>(config)
-                .AddHttpClient<NanoRpcClient>((s, c) =>
-                {
-                    var so = s.GetRequiredService<IOptions<SenderOptions>>();
-                    c.BaseAddress = new Uri("http://" + so.Value.NodeEndpoint);
-                })
-                .Services
+                .AddNanoRpcClient(new Uri("http://" + config["NodeEndpoint"])).Services
                 .AddSingleton<Program>()
                 .BuildServiceProvider();
 
@@ -107,8 +102,7 @@
         {
             logger.LogInformation($@"Preparing to send:
 wallet {options.Wallet}
-  from {options.Source}
-   via {options.NodeEndpoint}");
+  from {options.Source}");
 
             var multiplier = await GetMultiplier();
 
@@ -139,11 +133,9 @@ wallet {options.Wallet}
                             continue;
                         }
 
-                        var account = new Account(data[0]);
-
-                        if (await nanoRpcClient.ValidateAccountNumberAsync(account) != 1)
+                        if (!Account.TryParse(data[0], out var account))
                         {
-                            await outputFile.WriteLinesAsync($"{account} Invalid account (skipped)");
+                            await outputFile.WriteLinesAsync($"{data[0]} Invalid account (skipped)");
                             invalidCount++;
                             continue;
                         }
@@ -176,8 +168,7 @@ wallet {options.Wallet}
 
         public async Task BalanceAsync(string inputFileName, string outputFileName)
         {
-            logger.LogInformation($@"Preparing to check balances:
-   via {options.NodeEndpoint}");
+            logger.LogInformation($@"Preparing to check balances");
 
             var multiplier = await GetMultiplier();
 
@@ -202,11 +193,9 @@ wallet {options.Wallet}
                             break;
                         }
 
-                        var account = new Account(data[0]);
-
-                        if (await nanoRpcClient.ValidateAccountNumberAsync(account) != 1)
+                        if (!Account.TryParse(data[0], out var account))
                         {
-                            await outputFile.WriteLinesAsync($"{account} Invalid account (skipped)");
+                            await outputFile.WriteLinesAsync($"{data[0]} Invalid account (skipped)");
                             invalidCount++;
                             continue;
                         }

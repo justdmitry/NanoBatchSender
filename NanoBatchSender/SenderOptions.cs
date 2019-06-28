@@ -8,7 +8,5 @@
         public string Wallet { get; set; }
 
         public Account Source { get; set; }
-
-        public string NodeEndpoint { get; set; }
     }
 }

@@ -6,7 +6,7 @@
 
     public static class Extensions
     {
-        public static async Task<BigInteger> BanToRawAsync(this NanoRpcClient client, BigInteger amount)
+        public static async Task<BigInteger> BanToRawAsync(this INanoRpcClient client, BigInteger amount)
         {
             var r = await client.SendAsync(new BanToRawRequest(amount));
             return r.Amount;
