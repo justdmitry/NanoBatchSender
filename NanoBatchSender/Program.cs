@@ -93,9 +93,15 @@
             var version = await nanoRpcClient.VersionAsync();
             logger.LogInformation($"Node vendor: {version.NodeVendor}");
 
-            return version.NodeVendor.StartsWith("Banano")
-                ? await nanoRpcClient.BanToRawAsync(new BigInteger(1))
-                : await nanoRpcClient.MraiToRawAsync(new BigInteger(1));
+            switch (version.NetworkType)
+            {
+                case NetworkType.Nano:
+                    return await nanoRpcClient.MraiToRawAsync(new BigInteger(1));
+                case NetworkType.Banano:
+                    return await nanoRpcClient.BanToRawAsync(new BigInteger(1));
+                default:
+                    return 0;
+            }
         }
 
         public async Task SendAsync(string inputFileName, string outputFileName)
