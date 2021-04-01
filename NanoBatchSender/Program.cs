@@ -158,6 +158,8 @@ wallet {options.Wallet}
 
                         await outputFile.WriteLinesAsync($"{DateTimeOffset.Now.ToString("HH:mm:ss")} {block} {account} {amount}");
                         paymentsCount++;
+
+                        await Task.Delay(3000);
                     }
 
                     await outputFile.WriteLineAsync();
